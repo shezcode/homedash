@@ -20,10 +20,9 @@ public class RepositoryException : Exception
     ErrorCode = errorCode;
   }
 
-  public RepositoryException(string errorCode, string details, string message) : base(message)
+  public RepositoryException(string errorCode, string details, string message, Exception innerException) : base(message, innerException)
   {
     ErrorCode = errorCode;
     Details = details;
   }
-
 }

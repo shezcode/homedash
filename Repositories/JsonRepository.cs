@@ -265,7 +265,7 @@ public abstract class JsonRepository<T> : IRepository<T> where T : class
       try
       {
         var entityIndex = _data.FindIndex(x => GetEntityId(x) == id);
-        if (entityIndex = -1)
+        if (entityIndex == -1)
         {
           return false;
         }
