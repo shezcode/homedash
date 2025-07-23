@@ -257,12 +257,84 @@ public abstract class JsonRepository<T> : IRepository<T> where T : class
   }
 
   public virtual async Task<bool> DeleteAsync(int id)
-  { }
+  {
+    try
+    {
+      await LoadDataAsync();
+      await _semaphore.WaitAsync();
+      try
+      {
+        var entityIndex = _data.FindIndex(x => GetEntityId(x) == id);
+        if (entityIndex = -1)
+        {
+          return false;
+        }
+        _data.RemoveAt(entityIndex);
+        return true;
+      }
+      finally
+      {
+        _semaphore.Release();
+      }
+    }
+    catch (RepositoryException)
+    {
+      throw;
+    }
+    catch (Exception ex)
+    {
+      throw new RepositoryException("UNEXPECTED_ERROR",
+        $"Unexpected error occurred while deleting entity with ID {id}", ex);
+    }
+  }
 
   public virtual async Task<bool> SaveChangesAsync()
-  { }
+  {
+    try
+    {
+      await SaveDataAsync();
+      return true;
+    }
+    catch (RepositoryException)
+    {
+      throw;
+    }
+    catch (Exception ex)
+    {
+      throw new RepositoryException("UNEXPECTED_ERROR",
+        "Unexpected error occurred while saving changes", ex);
+    }
+  }
 
   public virtual async Task<List<T>> GetWhereAsync(Func<T, bool> predicate)
-  { }
+  {
+    if (predicate == null)
+    {
+      throw new ArgumentNullException(nameof(predicate));
+    }
+
+    try
+    {
+      await LoadDataAsync();
+      await _semaphore.WaitAsync();
+      try
+      {
+        return _data.Where(predicate).ToList();
+      }
+      finally
+      {
+        _semaphore.Release();
+      }
+    }
+    catch (RepositoryException)
+    {
+      throw;
+    }
+    catch (Exception ex)
+    {
+      throw new RepositoryException("UNEXPECTED_ERROR",
+        "Unexpected error occurred while filtering entities", ex);
+    }
+  }
 
 }
