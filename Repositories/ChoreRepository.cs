@@ -110,6 +110,117 @@ public class ChoreRepository : JsonRepository<Chore>
                     .OrderBy(chore => chore.DueDate)
                     .ToList();
       }
+      finally
+      {
+        _semaphore.Release();
+      }
+    }
+    catch (RepositoryException)
+    {
+      throw;
+    }
+    catch (Exception ex)
+    {
+      throw new RepositoryException("UNEXPECTED_ERROR",
+        $"An unexpected error occured while getting incomplete chores for household {householdId}", ex);
+    }
+  }
+
+  public override async Task<Chore> AddAsync(Chore entity)
+  {
+    if (entity == null)
+      throw new ArgumentNullException(nameof(entity));
+
+    try
+    {
+      await LoadDataAsync();
+      await _semaphore.WaitAsync();
+      try
+      {
+        var maxId = _data.Count > 0 ? _data.Max(x => x.Id) : 0;
+        entity.Id = maxId + 1;
+
+        entity.CreatedDate = DateTime.UtcNow;
+        entity.ModifiedDate = null;
+
+        if (entity.PointsValue <= 0)
+        {
+          entity.PointsValue = 10;
+        }
+        _data.Add(entity);
+        return entity;
+      }
+      finally
+      {
+        _semaphore.Release();
+      }
+    }
+    catch (RepositoryException)
+    {
+      throw;
+    }
+    catch (Exception ex)
+    {
+      throw new RepositoryException("UNEXPECTED_ERROR",
+      "An error occurred while adding chore", ex);
+    }
+  }
+
+  public override async Task<Chore> UpdateAsync(Chore entity)
+  {
+    if (entity == null)
+    {
+      throw new ArgumentNullException(nameof(entity));
+    }
+
+    try
+    {
+      await LoadDataAsync();
+      await _semaphore.WaitAsync();
+      try
+      {
+        var existingIndex = _data.FindIndex(x => x.Id == entity.Id);
+
+        if (existingIndex == -1)
+        {
+          throw new RepositoryException("ENTITY_NOT_FOUND",
+            $"Chore with ID {entity.Id} not found for update");
+        }
+
+        var existingChore = _data[existingIndex];
+
+        entity.ModifiedDate = DateTime.UtcNow;
+
+        if (entity.IsCompleted && !existingChore.IsCompleted)
+        {
+          entity.CompletedDate = DateTime.UtcNow;
+        }
+        else if (!entity.IsCompleted)
+        {
+          entity.CompletedDate = null;
+        }
+
+        if (entity.PointsValue <= 0)
+        {
+          entity.PointsValue = 10;
+        }
+
+        _data[existingIndex] = entity;
+        return entity;
+      }
+      finally
+      {
+        _semaphore.Release();
+      }
+    }
+    catch (RepositoryException)
+    {
+      throw;
+    }
+    catch (Exception ex)
+    {
+      throw new RepositoryException("UNEXPECTED_ERROR",
+        "Unexpected error occurred while updating chore", ex);
     }
   }
 }
