@@ -13,4 +13,24 @@ public class AppException : Exception
   {
     Code = code;
   }
+
+  public static AppException NotFound(string entity, int id)
+  {
+    return new AppException("NOT_FOUND", $"{entity} with ID {id} was not found");
+  }
+
+  public static AppException Unauthorized(string action)
+  {
+    return new AppException("UNAUTHORIZED", $"You are not authorized to {action}");
+  }
+
+  public static AppException ValidationFailed(string field, string reason)
+  {
+    return new AppException("VALIDATION_FAILED", $"Validation failed for {field}: {reason}");
+  }
+
+  public static AppException BusinessRuleViolation(string rule)
+  {
+    return new AppException("BUSINESS_RULE_VIOLATION", $"Business rule violation: {rule}");
+  }
 }
