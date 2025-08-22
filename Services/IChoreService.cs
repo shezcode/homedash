@@ -1,3 +1,5 @@
+using HomeDash.Models;
+
 namespace HomeDash.Services;
 
 public interface IChoreService

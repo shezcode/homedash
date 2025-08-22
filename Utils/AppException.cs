@@ -3,6 +3,7 @@ namespace HomeDash.Utils;
 public class AppException : Exception
 {
   public string Code { get; }
+  public string UserMessage => Message;
 
   public AppException(string code, string message) : base(message)
   {

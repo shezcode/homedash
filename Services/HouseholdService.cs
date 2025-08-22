@@ -8,53 +8,81 @@ public class HouseholdService : IHouseholdService
 {
   private readonly IHouseholdRepository _householdRepository;
   private readonly IUserRepository _userRepository;
+  private readonly LoggerService _logger;
 
   public HouseholdService(IHouseholdRepository householdRepository, IUserRepository userRepository)
   {
     _householdRepository = householdRepository;
     _userRepository = userRepository;
+    _logger = LoggerService.Instance;
   }
 
   public async Task<Household> CreateHouseholdAsync(string name, string password, string address, int creatorUserId)
   {
-    if (string.IsNullOrWhiteSpace(name) || name.Length < 3 || name.Length > 100)
-      throw new AppException("INVALID_HOUSEHOLD_NAME", "Household name must be between 3 and 100 characters");
+    _logger.LogDebug("CreateHouseholdAsync called - Name: {0}, CreatorUserId: {1}", name, creatorUserId);
 
-    if (string.IsNullOrWhiteSpace(password))
-      throw new AppException("INVALID_INPUT", "Household password is required");
-
-    if (!string.IsNullOrWhiteSpace(address) && address.Length > 500)
-      throw new AppException("INVALID_ADDRESS", "Address cannot exceed 500 characters");
-
-    var isNameUnique = await _householdRepository.IsNameUniqueAsync(name);
-    if (!isNameUnique)
-      throw new AppException("HOUSEHOLD_NAME_EXISTS", "A household with this name already exists");
-
-    var creator = await _userRepository.GetByIdAsync(creatorUserId);
-    if (creator == null)
-      throw new AppException("USER_NOT_FOUND", "Creator user not found");
-
-    var household = new Household
+    try
     {
-      Name = name,
-      Password = PasswordHelper.HashPassword(password),
-      Address = address?.Trim(),
-      IsActive = true,
-      MaxMembers = 10,
-      CreatedDate = DateTime.UtcNow
-    };
+      if (string.IsNullOrWhiteSpace(name) || name.Length < 3 || name.Length > 100)
+      {
+        _logger.LogWarning("CreateHouseholdAsync validation failed - Invalid household name length: {0}", name?.Length ?? 0);
+        throw new AppException("INVALID_HOUSEHOLD_NAME", "Household name must be between 3 and 100 characters");
+      }
 
-    var createdHousehold = await _householdRepository.AddAsync(household);
-    await _householdRepository.SaveChangesAsync();
+      if (string.IsNullOrWhiteSpace(password))
+      {
+        _logger.LogWarning("CreateHouseholdAsync validation failed - Password is empty");
+        throw new AppException("INVALID_INPUT", "Household password is required");
+      }
 
-    creator.HouseholdId = createdHousehold.Id;
-    creator.IsAdmin = true;
-    creator.ModifiedDate = DateTime.UtcNow;
+      if (!string.IsNullOrWhiteSpace(address) && address.Length > 500)
+      {
+        _logger.LogWarning("CreateHouseholdAsync validation failed - Address too long: {0}", address.Length);
+        throw new AppException("INVALID_ADDRESS", "Address cannot exceed 500 characters");
+      }
 
-    await _userRepository.UpdateAsync(creator);
-    await _userRepository.SaveChangesAsync();
+      var isNameUnique = await _householdRepository.IsNameUniqueAsync(name);
+      if (!isNameUnique)
+      {
+        _logger.LogWarning("CreateHouseholdAsync failed - Household name already exists: {0}", name);
+        throw new AppException("HOUSEHOLD_NAME_EXISTS", "A household with this name already exists");
+      }
 
-    return createdHousehold;
+      var creator = await _userRepository.GetByIdAsync(creatorUserId);
+      if (creator == null)
+      {
+        _logger.LogWarning("CreateHouseholdAsync failed - Creator user not found: {0}", creatorUserId);
+        throw new AppException("USER_NOT_FOUND", "Creator user not found");
+      }
+
+      var household = new Household
+      {
+        Name = name,
+        Password = PasswordHelper.HashPassword(password),
+        Address = address?.Trim(),
+        IsActive = true,
+        MaxMembers = 10,
+        CreatedDate = DateTime.UtcNow
+      };
+
+      var createdHousehold = await _householdRepository.AddAsync(household);
+      await _householdRepository.SaveChangesAsync();
+
+      creator.HouseholdId = createdHousehold.Id;
+      creator.IsAdmin = true;
+      creator.ModifiedDate = DateTime.UtcNow;
+
+      await _userRepository.UpdateAsync(creator);
+      await _userRepository.SaveChangesAsync();
+
+      _logger.LogInfo("Household created successfully - ID: {0}, Name: {1}, CreatorUserId: {2}", createdHousehold.Id, createdHousehold.Name, creatorUserId);
+      return createdHousehold;
+    }
+    catch (Exception ex) when (!(ex is AppException))
+    {
+      _logger.LogError(ex, "Error creating household - Name: {0}, CreatorUserId: {1}", name, creatorUserId);
+      throw;
+    }
   }
 
   public async Task<bool> JoinHouseholdAsync(int userId, string householdName, string password)
@@ -94,10 +122,26 @@ public class HouseholdService : IHouseholdService
 
   public async Task<Household?> GetHouseholdAsync(int householdId)
   {
-    if (householdId <= 0)
-      return null;
+    _logger.LogDebug("GetHouseholdAsync called for householdId: {0}", householdId);
 
-    return await _householdRepository.GetByIdAsync(householdId);
+    try
+    {
+      if (householdId <= 0)
+      {
+        _logger.LogWarning("GetHouseholdAsync called with invalid householdId: {0}", householdId);
+        return null;
+      }
+
+      var household = await _householdRepository.GetByIdAsync(householdId);
+      _logger.LogInfo("Household retrieval {0} for householdId: {1}", household != null ? "successful" : "failed (not found)", householdId);
+      
+      return household;
+    }
+    catch (Exception ex)
+    {
+      _logger.LogError(ex, "Error retrieving household for householdId: {0}", householdId);
+      throw;
+    }
   }
 
   public async Task<List<User>> GetHouseholdMembersAsync(int householdId)

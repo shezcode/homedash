@@ -10,6 +10,7 @@ public class ShoppingService : IShoppingService
   private readonly IShoppingItemRepository _shoppingItemRepository;
   private readonly IUserRepository _userRepository;
   private readonly IAuthenticationService _authenticationService;
+  private readonly LoggerService _logger;
 
   public ShoppingService(
     IShoppingItemRepository shoppingItemRepository,
@@ -19,72 +20,124 @@ public class ShoppingService : IShoppingService
     _shoppingItemRepository = shoppingItemRepository;
     _userRepository = userRepository;
     _authenticationService = authenticationService;
+    _logger = LoggerService.Instance;
   }
 
   public async Task<List<ShoppingItem>> GetHouseholdItemsAsync(int householdId)
   {
-    if (householdId <= 0)
-      return new List<ShoppingItem>();
+    _logger.LogDebug("GetHouseholdItemsAsync called for householdId: {0}", householdId);
 
-    var items = await _shoppingItemRepository.GetByHouseholdIdAsync(householdId);
+    try
+    {
+      if (householdId <= 0)
+      {
+        _logger.LogWarning("GetHouseholdItemsAsync called with invalid householdId: {0}", householdId);
+        return new List<ShoppingItem>();
+      }
 
-    return items
-      .OrderBy(i => i.IsPurchased)
-      .ThenBy(i => (int)i.Urgency)
-      .ThenByDescending(i => i.CreatedDate)
-      .ToList();
+      var items = await _shoppingItemRepository.GetByHouseholdIdAsync(householdId);
+      _logger.LogInfo("Retrieved {0} shopping items for household {1}", items.Count, householdId);
+
+      return items
+        .OrderBy(i => i.IsPurchased)
+        .ThenBy(i => (int)i.Urgency)
+        .ThenByDescending(i => i.CreatedDate)
+        .ToList();
+    }
+    catch (Exception ex)
+    {
+      _logger.LogError(ex, "Error retrieving shopping items for household {0}", householdId);
+      throw;
+    }
   }
 
   public async Task<ShoppingItem> AddItemAsync(string name, string category, decimal price, UrgencyLevel urgency, int userId, int householdId)
   {
-    if (string.IsNullOrWhiteSpace(name) || name.Length < 1 || name.Length > 200)
-      throw new AppException("INVALID_ITEM_DATA", "Item name must be between 1 and 200 characters long");
+    _logger.LogDebug("AddItemAsync called - Name: {0}, Category: {1}, Price: {2}, UserId: {3}, HouseholdId: {4}", name, category, price, userId, householdId);
 
-    if (string.IsNullOrWhiteSpace(category) || category.Length < 1 || category.Length > 50)
-      throw new AppException("INVALID_ITEM_DATA", "Category must be between 1 and 50 characters long");
-
-    if (price < 0 || price > 10000)
-      throw new AppException("INVALID_ITEM_DATA", "Price must be between 1 and 10000");
-
-    if (!Enum.IsDefined(typeof(UrgencyLevel), urgency))
-      throw new AppException("INVALID_ITEM_DATA", "Invalid urgency level");
-
-    await VerifyUserHouseholdMembership(userId, householdId);
-
-    var item = new ShoppingItem
+    try
     {
-      Name = name.Trim(),
-      Category = NormalizeCategory(category),
-      Price = price,
-      Urgency = urgency,
-      CreatedByUserId = userId,
-      HouseholdId = householdId,
-      CreatedDate = DateTime.UtcNow,
-      IsPurchased = false
-    };
+      if (string.IsNullOrWhiteSpace(name) || name.Length < 1 || name.Length > 200)
+      {
+        _logger.LogWarning("AddItemAsync validation failed - Invalid item name length: {0}", name?.Length ?? 0);
+        throw new AppException("INVALID_ITEM_DATA", "Item name must be between 1 and 200 characters long");
+      }
 
-    var createdItem = await _shoppingItemRepository.AddAsync(item);
-    await _shoppingItemRepository.SaveChangesAsync();
+      if (string.IsNullOrWhiteSpace(category) || category.Length < 1 || category.Length > 50)
+      {
+        _logger.LogWarning("AddItemAsync validation failed - Invalid category length: {0}", category?.Length ?? 0);
+        throw new AppException("INVALID_ITEM_DATA", "Category must be between 1 and 50 characters long");
+      }
 
-    return createdItem;
+      if (price < 0 || price > 10000)
+      {
+        _logger.LogWarning("AddItemAsync validation failed - Invalid price: {0}", price);
+        throw new AppException("INVALID_ITEM_DATA", "Price must be between 1 and 10000");
+      }
+
+      if (!Enum.IsDefined(typeof(UrgencyLevel), urgency))
+      {
+        _logger.LogWarning("AddItemAsync validation failed - Invalid urgency level: {0}", urgency);
+        throw new AppException("INVALID_ITEM_DATA", "Invalid urgency level");
+      }
+
+      await VerifyUserHouseholdMembership(userId, householdId);
+
+      var item = new ShoppingItem
+      {
+        Name = name.Trim(),
+        Category = NormalizeCategory(category),
+        Price = price,
+        Urgency = urgency,
+        CreatedByUserId = userId,
+        HouseholdId = householdId,
+        CreatedDate = DateTime.UtcNow,
+        IsPurchased = false
+      };
+
+      var createdItem = await _shoppingItemRepository.AddAsync(item);
+      await _shoppingItemRepository.SaveChangesAsync();
+
+      _logger.LogInfo("Shopping item added successfully - ID: {0}, Name: {1}, UserId: {2}, HouseholdId: {3}", createdItem.Id, createdItem.Name, userId, householdId);
+      return createdItem;
+    }
+    catch (Exception ex) when (!(ex is AppException))
+    {
+      _logger.LogError(ex, "Error adding shopping item - Name: {0}, UserId: {1}, HouseholdId: {2}", name, userId, householdId);
+      throw;
+    }
   }
 
   public async Task<bool> MarkAsPurchasedAsync(int itemId, int userId)
   {
-    var item = await _shoppingItemRepository.GetByIdAsync(itemId);
-    if (item == null)
-      throw new AppException("ITEM_NOT_FOUND", "Shopping item not found");
+    _logger.LogDebug("MarkAsPurchasedAsync called - ItemId: {0}, UserId: {1}", itemId, userId);
 
-    await VerifyUserHouseholdMembership(userId, item.HouseholdId);
+    try
+    {
+      var item = await _shoppingItemRepository.GetByIdAsync(itemId);
+      if (item == null)
+      {
+        _logger.LogWarning("MarkAsPurchasedAsync failed - Item not found: {0}", itemId);
+        throw new AppException("ITEM_NOT_FOUND", "Shopping item not found");
+      }
 
-    item.IsPurchased = true;
-    item.PurchasedDate = DateTime.UtcNow;
-    item.ModifiedDate = DateTime.UtcNow;
+      await VerifyUserHouseholdMembership(userId, item.HouseholdId);
 
-    await _shoppingItemRepository.UpdateAsync(item);
-    await _shoppingItemRepository.SaveChangesAsync();
+      item.IsPurchased = true;
+      item.PurchasedDate = DateTime.UtcNow;
+      item.ModifiedDate = DateTime.UtcNow;
 
-    return true;
+      await _shoppingItemRepository.UpdateAsync(item);
+      await _shoppingItemRepository.SaveChangesAsync();
+
+      _logger.LogInfo("Shopping item marked as purchased - ItemId: {0}, UserId: {1}", itemId, userId);
+      return true;
+    }
+    catch (Exception ex) when (!(ex is AppException))
+    {
+      _logger.LogError(ex, "Error marking item as purchased - ItemId: {0}, UserId: {1}", itemId, userId);
+      throw;
+    }
   }
 
   public async Task<bool> DeleteItemAsync(int itemId, int userId)

@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
-using HomeDash.Models;
+using HomeDash.Utils;
+
+namespace HomeDash.Models;
 
 public class Chore
 {
@@ -21,10 +23,14 @@ public class Chore
 
   public int AssignedToUserId { get; set; }
 
+  public int CreatedByUserId { get; set; }
+
   public int HouseholdId { get; set; }
 
   [Range(1, 100)]
   public int PointsValue { get; set; } = 10;
+
+  public UrgencyLevel UrgencyLevel { get; set; } = UrgencyLevel.Medium;
 
   public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 

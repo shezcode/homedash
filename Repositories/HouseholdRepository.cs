@@ -3,7 +3,7 @@ using HomeDash.Utils;
 
 namespace HomeDash.Repositories;
 
-public class HouseholdRepository : JsonRepository<Household>
+public class HouseholdRepository : JsonRepository<Household>, IHouseholdRepository
 {
   public HouseholdRepository() : base("households.json")
   {

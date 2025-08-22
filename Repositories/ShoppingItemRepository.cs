@@ -3,13 +3,13 @@ using HomeDash.Utils;
 
 namespace HomeDash.Repositories;
 
-public class ShoppingItemRepository : JsonRepository<ShoppingItem>
+public class ShoppingItemRepository : JsonRepository<ShoppingItem>, IShoppingItemRepository
 {
   public ShoppingItemRepository() : base("shopping-items.json")
   {
   }
 
-  public async Task<List<ShoppingItem>> GetByHousholdIdAsync(int householdId)
+  public async Task<List<ShoppingItem>> GetByHouseholdIdAsync(int householdId)
   {
     try
     {

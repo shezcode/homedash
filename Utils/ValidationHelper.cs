@@ -12,6 +12,10 @@ public static class ValidationHelper
     @"^[a-zA-Z][a-zA-Z0-9_]{2,49}$",
     RegexOptions.Compiled);
 
+  private static readonly Regex NameRegex = new(
+    @"^[a-zA-Z]+(?: [a-zA-Z]+)*$",
+    RegexOptions.Compiled);
+
   public static bool IsValidEmail(string email)
   {
     if (string.IsNullOrWhiteSpace(email))
@@ -30,5 +34,15 @@ public static class ValidationHelper
     }
 
     return UsernameRegex.IsMatch(username);
+  }
+
+  public static bool IsValidName(string name)
+  {
+    if (string.IsNullOrWhiteSpace(name))
+    {
+      return false;
+    }
+
+    return NameRegex.IsMatch(name.Trim()) && name.Trim().Length >= 2 && name.Trim().Length <= 100;
   }
 }

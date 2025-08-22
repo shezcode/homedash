@@ -11,6 +11,7 @@ public class ChoreService : IChoreService
 {
   private readonly IChoreRepository _choreRepository;
   private readonly IUserRepository _userRepository;
+  private readonly LoggerService _logger;
 
   public ChoreService(
     IChoreRepository choreRepository,
@@ -18,90 +19,158 @@ public class ChoreService : IChoreService
   {
     _choreRepository = choreRepository;
     _userRepository = userRepository;
+    _logger = LoggerService.Instance;
   }
 
   public async Task<List<Chore>> GetHouseholdChoresAsync(int householdId)
   {
-    if (householdId <= 0)
-      return new List<Chore>();
+    _logger.LogDebug("GetHouseholdChoresAsync called for householdId: {0}", householdId);
 
-    var chores = await _choreRepository.GetByHouseholdIdAsync(householdId);
+    try
+    {
+      if (householdId <= 0)
+      {
+        _logger.LogWarning("GetHouseholdChoresAsync called with invalid householdId: {0}", householdId);
+        return new List<Chore>();
+      }
 
-    return chores
-      .OrderBy(c => c.IsCompleted)
-      .ThenBy(c => c.DueDate)
-      .ToList();
+      var chores = await _choreRepository.GetByHouseholdIdAsync(householdId);
+      _logger.LogInfo("Retrieved {0} chores for household {1}", chores.Count, householdId);
+
+      return chores
+        .OrderBy(c => c.IsCompleted)
+        .ThenBy(c => c.DueDate)
+        .ToList();
+    }
+    catch (Exception ex)
+    {
+      _logger.LogError(ex, "Error retrieving chores for household {0}", householdId);
+      throw;
+    }
   }
 
   public async Task<Chore> CreateChoreAsync(string title, string description, DateTime dueDate, int assignedToUserId, int householdId, int pointsValue)
   {
-    if (string.IsNullOrWhiteSpace(title) || title.Length < 1 || title.Length > 200)
-      throw new AppException("INVALID_CHORE_DATA", "Title must be between 1 and 200 characters long");
-    if (!string.IsNullOrEmpty(description) && description.Length > 1000)
-      throw new AppException("INVALID_CHORE_DATA", "Description cannot exceed 1000 characters");
+    _logger.LogDebug("CreateChoreAsync called - Title: {0}, AssignedTo: {1}, Household: {2}", title, assignedToUserId, householdId);
 
-    if (dueDate <= DateTime.UtcNow)
-      throw new AppException("INVALID_DUE_DATE", "Due date must be in the future");
-
-    if (pointsValue < 1 || pointsValue > 100)
-      throw new AppException("INVALID_CHORE_DATA", "Points value must be between 1 and 100");
-
-    var assignedUser = await _userRepository.GetByIdAsync(assignedToUserId);
-    if (assignedUser == null)
-      throw new AppException("USER_NOT_FOUND", "Assigned user not found");
-
-    if (assignedUser.HouseholdId != householdId)
-      throw new AppException("USER_NOT_IN_HOUSEHOLD", "Assigned user does not belong to household");
-
-    var chore = new Chore
+    try
     {
-      Title = title.Trim(),
-      Description = description?.Trim(),
-      DueDate = dueDate,
-      AssignedToUserId = assignedToUserId,
-      HouseholdId = householdId,
-      PointsValue = pointsValue,
-      CreatedDate = DateTime.UtcNow,
-      IsCompleted = false
-    };
+      if (string.IsNullOrWhiteSpace(title) || title.Length < 1 || title.Length > 200)
+      {
+        _logger.LogWarning("CreateChoreAsync validation failed - Invalid title length: {0}", title?.Length ?? 0);
+        throw new AppException("INVALID_CHORE_DATA", "Title must be between 1 and 200 characters long");
+      }
+      
+      if (!string.IsNullOrEmpty(description) && description.Length > 1000)
+      {
+        _logger.LogWarning("CreateChoreAsync validation failed - Description too long: {0}", description.Length);
+        throw new AppException("INVALID_CHORE_DATA", "Description cannot exceed 1000 characters");
+      }
 
-    var createdChore = await _choreRepository.AddAsync(chore);
-    await _choreRepository.SaveChangesAsync();
+      if (dueDate <= DateTime.UtcNow)
+      {
+        _logger.LogWarning("CreateChoreAsync validation failed - Invalid due date: {0}", dueDate);
+        throw new AppException("INVALID_DUE_DATE", "Due date must be in the future");
+      }
 
-    return createdChore;
+      if (pointsValue < 1 || pointsValue > 100)
+      {
+        _logger.LogWarning("CreateChoreAsync validation failed - Invalid points value: {0}", pointsValue);
+        throw new AppException("INVALID_CHORE_DATA", "Points value must be between 1 and 100");
+      }
+
+      var assignedUser = await _userRepository.GetByIdAsync(assignedToUserId);
+      if (assignedUser == null)
+      {
+        _logger.LogWarning("CreateChoreAsync failed - User not found: {0}", assignedToUserId);
+        throw new AppException("USER_NOT_FOUND", "Assigned user not found");
+      }
+
+      if (assignedUser.HouseholdId != householdId)
+      {
+        _logger.LogWarning("CreateChoreAsync failed - User {0} not in household {1}", assignedToUserId, householdId);
+        throw new AppException("USER_NOT_IN_HOUSEHOLD", "Assigned user does not belong to household");
+      }
+
+      var chore = new Chore
+      {
+        Title = title.Trim(),
+        Description = description?.Trim(),
+        DueDate = dueDate,
+        AssignedToUserId = assignedToUserId,
+        HouseholdId = householdId,
+        PointsValue = pointsValue,
+        CreatedDate = DateTime.UtcNow,
+        IsCompleted = false
+      };
+
+      var createdChore = await _choreRepository.AddAsync(chore);
+      await _choreRepository.SaveChangesAsync();
+
+      _logger.LogInfo("Chore created successfully - ID: {0}, Title: {1}, AssignedTo: {2}", createdChore.Id, createdChore.Title, assignedToUserId);
+      return createdChore;
+    }
+    catch (Exception ex) when (!(ex is AppException))
+    {
+      _logger.LogError(ex, "Error creating chore - Title: {0}, AssignedTo: {1}, Household: {2}", title, assignedToUserId, householdId);
+      throw;
+    }
   }
 
   public async Task<bool> CompleteChoreAsync(int choreId, int userId)
   {
-    var chore = await _choreRepository.GetByIdAsync(choreId);
-    if (chore == null)
-      throw new AppException("CHORE_NOT_FOUND", "Chore not found");
+    _logger.LogDebug("CompleteChoreAsync called - ChoreId: {0}, UserId: {1}", choreId, userId);
 
-    if (chore.IsCompleted)
-      throw new AppException("CHORE_ALREADY_COMPLETED", "This chore has already been completed");
+    try
+    {
+      var chore = await _choreRepository.GetByIdAsync(choreId);
+      if (chore == null)
+      {
+        _logger.LogWarning("CompleteChoreAsync failed - Chore not found: {0}", choreId);
+        throw new AppException("CHORE_NOT_FOUND", "Chore not found");
+      }
 
-    if (chore.AssignedToUserId != userId)
-      throw new AppException("NOT_ASSIGNED_TO_CHORE", "You are not assigned to complete this chore");
+      if (chore.IsCompleted)
+      {
+        _logger.LogWarning("CompleteChoreAsync failed - Chore already completed: {0}", choreId);
+        throw new AppException("CHORE_ALREADY_COMPLETED", "This chore has already been completed");
+      }
 
-    var user = await _userRepository.GetByIdAsync(userId);
-    if (user == null)
-      throw new AppException("USER_NOT_FOUND", "User not found");
+      if (chore.AssignedToUserId != userId)
+      {
+        _logger.LogWarning("CompleteChoreAsync failed - User {0} not assigned to chore {1}", userId, choreId);
+        throw new AppException("NOT_ASSIGNED_TO_CHORE", "You are not assigned to complete this chore");
+      }
 
-    var pointsToAward = CalculatePointsWithBonus(chore);
+      var user = await _userRepository.GetByIdAsync(userId);
+      if (user == null)
+      {
+        _logger.LogWarning("CompleteChoreAsync failed - User not found: {0}", userId);
+        throw new AppException("USER_NOT_FOUND", "User not found");
+      }
 
-    chore.IsCompleted = true;
-    chore.CompletedDate = DateTime.UtcNow;
-    chore.ModifiedDate = DateTime.UtcNow;
+      var pointsToAward = CalculatePointsWithBonus(chore);
 
-    user.Points += pointsToAward;
-    user.ModifiedDate = DateTime.UtcNow;
+      chore.IsCompleted = true;
+      chore.CompletedDate = DateTime.UtcNow;
+      chore.ModifiedDate = DateTime.UtcNow;
 
-    await _choreRepository.UpdateAsync(chore);
-    await _userRepository.UpdateAsync(user);
-    await _choreRepository.SaveChangesAsync();
-    await _userRepository.SaveChangesAsync();
+      user.Points += pointsToAward;
+      user.ModifiedDate = DateTime.UtcNow;
 
-    return true;
+      await _choreRepository.UpdateAsync(chore);
+      await _userRepository.UpdateAsync(user);
+      await _choreRepository.SaveChangesAsync();
+      await _userRepository.SaveChangesAsync();
+
+      _logger.LogInfo("Chore completed successfully - ChoreId: {0}, UserId: {1}, PointsAwarded: {2}", choreId, userId, pointsToAward);
+      return true;
+    }
+    catch (Exception ex) when (!(ex is AppException))
+    {
+      _logger.LogError(ex, "Error completing chore - ChoreId: {0}, UserId: {1}", choreId, userId);
+      throw;
+    }
   }
 
   public async Task<bool> DeleteChoreAsync(int choreId, int userId)
@@ -125,15 +194,29 @@ public class ChoreService : IChoreService
 
   public async Task<List<Chore>> GetUserChoresAsync(int userId)
   {
-    if (userId <= 0)
-      return new List<Chore>();
+    _logger.LogDebug("GetUserChoresAsync called for userId: {0}", userId);
 
-    var chores = await _choreRepository.GetByUserIdAsync(userId);
+    try
+    {
+      if (userId <= 0)
+      {
+        _logger.LogWarning("GetUserChoresAsync called with invalid userId: {0}", userId);
+        return new List<Chore>();
+      }
 
-    return chores
-      .OrderBy(c => c.IsCompleted)
-      .ThenBy(c => c.DueDate)
-      .ToList();
+      var chores = await _choreRepository.GetByUserIdAsync(userId);
+      _logger.LogInfo("Retrieved {0} chores for user {1}", chores.Count, userId);
+
+      return chores
+        .OrderBy(c => c.IsCompleted)
+        .ThenBy(c => c.DueDate)
+        .ToList();
+    }
+    catch (Exception ex)
+    {
+      _logger.LogError(ex, "Error retrieving chores for user {0}", userId);
+      throw;
+    }
   }
 
   public async Task<List<Chore>> GetOverdueChoresAsync(int householdId)

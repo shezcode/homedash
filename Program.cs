@@ -1,4 +1,7 @@
 ﻿using HomeDash.Utils;
+using HomeDash.UI;
+using HomeDash.Services;
+using HomeDash.Repositories;
 using Spectre.Console;
 
 try
@@ -37,10 +40,32 @@ try
   AnsiConsole.MarkupLine("[yellow]Application initialized successfully![/]");
   AnsiConsole.WriteLine();
 
+  // Initialize repositories
+  IUserRepository userRepository = new UserRepository();
+  IHouseholdRepository householdRepository = new HouseholdRepository();
+  IChoreRepository choreRepository = new ChoreRepository();
+  IShoppingItemRepository shoppingItemRepository = new ShoppingItemRepository();
+
+  // Initialize services
+  var authService = new AuthenticationService(userRepository, householdRepository);
+  var householdService = new HouseholdService(householdRepository, userRepository);
+  var choreService = new ChoreService(choreRepository, userRepository);
+  var shoppingService = new ShoppingService(shoppingItemRepository, userRepository, authService);
+  var userService = new UserService(userRepository, choreRepository, shoppingItemRepository, householdRepository);
+
+  // Initialize seed data
+  await SeedDataService.InitializeSeedDataAsync(userRepository, householdRepository, choreRepository, shoppingItemRepository);
+  
+  // Display seed data information
+  SeedDataService.DisplaySeedDataInfo();
+
+  // Initialize menu service
+  var menuService = new SpectreMenuService(authService, choreService, shoppingService, householdService, userService);
+
   logger.LogInfo("HomeDash application initialized successfully");
-  // Wait for user input before exit
-  AnsiConsole.MarkupLine("[dim]Press any key to exit...[/]");
-  Console.ReadKey();
+  
+  // Start the application
+  await menuService.ShowLoginMenuAsync();
 
   logger.LogInfo("HomeDash application shutting down");
 }

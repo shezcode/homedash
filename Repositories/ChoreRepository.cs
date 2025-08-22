@@ -3,7 +3,7 @@ using HomeDash.Utils;
 
 namespace HomeDash.Repositories;
 
-public class ChoreRepository : JsonRepository<Chore>
+public class ChoreRepository : JsonRepository<Chore>, IChoreRepository
 {
   public ChoreRepository() : base("chores.json")
   {
